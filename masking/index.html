@@ -111,7 +111,7 @@
     <li>Open DevTools → Network, tick <strong>Preserve log</strong>, filter on <span class="mono">amplitude</span>.</li>
     <li><span class="mono">sr-client-cfg.amplitude.com/config</span> (or, on this page, <span class="mono">/sr-config/&lt;api key&gt;</span>, a pinned copy of the project config from before any central rules existed): the remote-config fetch. Session Replay will not record if this fails when remote config is on; it fails closed.</li>
     <li><span class="mono">api2.amplitude.com/2/httpapi</span>: analytics events as plain JSON. Autocapture events carry element IDs, classes, tags, hierarchy and visible text, never input values. Text matching email, credit card or social security patterns is masked by pattern (<a href="https://amplitude.com/docs/data/autocapture#default-autocapture-protections" rel="noopener">docs</a>).</li>
-    <li><span class="mono">api-sr.amplitude.com/sessions/v2/track</span>: the replay payload. It is rrweb JSON (a full DOM snapshot, then diffs), gzipped. The panel on the right decodes it and lists every input value and text node it contains, so you can see asterisks where masking applied. Attribute values, image URLs and stylesheet URLs are sent as-is.</li>
+    <li><span class="mono">api-sr.amplitude.com/sessions/v2/track</span>: the replay payload. It is rrweb JSON (a full DOM snapshot, then diffs), compressed. The plugin uploads from a Web Worker, so in DevTools the request's initiator is the worker rather than the page. The panel on the right decodes it and lists every input value and text node it contains, so you can see asterisks where masking applied. Attribute values, image URLs and stylesheet URLs are sent as-is.</li>
   </ol>
 
   <h2>What the three levels mean, from the SDK's own rule</h2>
