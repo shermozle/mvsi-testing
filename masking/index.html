@@ -120,7 +120,7 @@
     <tbody>
       <tr><td><strong>Light</strong></td><td>Only <span class="mono">type=password</span>, <span class="mono">hidden</span>, <span class="mono">email</span>, <span class="mono">tel</span>, and any input whose <span class="mono">autocomplete</span> starts with <span class="mono">cc-</span>. Everything else is sent in clear, including a TFN typed into a plain text box.</td><td>None, unless you add <span class="mono">maskSelector</span> or <span class="mono">.amp-mask</span>.</td><td>Low-sensitivity products. Not a KYB form.</td></tr>
       <tr><td><strong>Medium</strong> (default)</td><td>All <span class="mono">&lt;input&gt;</span>, <span class="mono">&lt;select&gt;</span> and <span class="mono">&lt;textarea&gt;</span> values.</td><td>None by default. Labels, headings and any PII rendered as text stay visible.</td><td>Most products. For KYB, fine for the inputs, but review-step summaries that render the applicant's data as text are exposed.</td></tr>
-      <tr><td><strong>Conservative</strong></td><td>Everything.</td><td>All text nodes, including labels and links. Images and attribute values are not text and are not masked.</td><td>Financial services, healthcare, KYB. Combine with <span class="mono">unmaskSelector</span> for navigation labels so replays stay readable.</td></tr>
+      <tr><td><strong>Conservative</strong></td><td>Every input, select and textarea.</td><td><strong>Every text node on the page</strong>: labels, headings, paragraphs, links and review summaries, not only form fields. Images and attribute values are not text and are not masked.</td><td>Financial services, healthcare, KYB. Combine with <span class="mono">unmaskSelector</span> for navigation labels so replays stay readable.</td></tr>
     </tbody>
   </table>
   <div class="note">Masking is applied in the browser while the DOM snapshot is built. The asterisks you see in the payload are what Amplitude stores. There is no unmasked copy anywhere, which is also why rule changes cannot be applied retroactively (see <a href="../recording-privacy/">recording-time privacy</a>).</div>
@@ -138,7 +138,7 @@
     var tag = el.tagName.toLowerCase();
     if (el.closest(".unmask-me")) return { masked: false, why: "unmaskSelector" };
     if (el.closest(".mask-me")) return { masked: true, why: "maskSelector" };
-    if (level === "conservative") return { masked: true, why: "conservative masks everything" };
+    if (level === "conservative") return { masked: true, why: "conservative masks every input and every text node" };
     if (level === "medium") return { masked: tag === "input" || tag === "select" || tag === "textarea", why: "medium masks all inputs" };
     var t = (el.type || "").toLowerCase();
     var ac = (el.getAttribute("autocomplete") || "");
@@ -154,8 +154,23 @@
     var label = el.closest(".field") ? el.closest(".field").querySelector("label").textContent.replace(/\(.*\)/, "").trim() : el.name;
     rows.push("<tr><td>" + label + "</td><td class=\"mono\">" + (el.type || el.tagName.toLowerCase()) + (el.getAttribute("autocomplete") ? " · " + el.getAttribute("autocomplete") : "") + "</td><td>" + (r.masked ? '<span class="badge ok">masked</span>' : '<span class="badge bad">sent in clear</span>') + ' <span class="muted">' + r.why + "</span></td></tr>");
   });
-  document.getElementById("level-explain").innerHTML = '<table><thead><tr><th>Field</th><th>Type</th><th>At ' + level + "</th></tr></thead><tbody>" + rows.join("") + "</tbody></table>" +
-    '<p class="muted">Static text: ' + (level === "conservative" ? "masked" : "sent in clear, except the <code>mask-me</code> block") + ". Attribute values: sent in clear at every level.</p>";
+  var levelSummary = {
+    light: "<strong>Light</strong> masks only password, hidden, email and tel inputs plus card fields hinted with <code>autocomplete=\"cc-\"</code>. Every other input and all page text is sent in clear.",
+    medium: "<strong>Medium</strong> masks the value of every input, select and textarea. All page text (labels, headings, review summaries) is sent in clear.",
+    conservative: "<strong>Conservative</strong> masks every input <em>and every text node on the page</em>: labels, headings, paragraphs, links, review summaries. Only images, attribute values and elements you explicitly unmask are left readable."
+  }[level];
+  document.getElementById("level-explain").innerHTML = '<p>' + levelSummary + '</p>' +
+    '<table><thead><tr><th>Field</th><th>Type</th><th>At ' + level + "</th></tr></thead><tbody>" + rows.join("") + "</tbody></table>" +
+    '<p class="muted">Static page text: ' + (level === "conservative" ? '<span class="badge ok">masked</span> every text node, not just inputs' : '<span class="badge bad">sent in clear</span>, except the <code>mask-me</code> block') + ". Attribute values: sent in clear at every level.</p>" +
+    '<p class="muted small" id="live-project-note">Checking the project\'s central settings…</p>';
+  // Show what the project enforces centrally, for contrast. This page pins its own config so the switch above is honoured.
+  fetch("https://sr-client-cfg.amplitude.com/config/" + window.MVSI_CONFIG.apiKey + "?config_group=browser", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (cfg) {
+    var sr = (cfg.configs && cfg.configs.sessionReplay) || {}; var pc = sr.sr_privacy_config || {};
+    var n = document.getElementById("live-project-note");
+    n.innerHTML = pc.defaultMaskLevel
+      ? "The project currently enforces <strong>" + pc.defaultMaskLevel + "</strong> centrally" + ((pc.maskSelector || []).length ? ", masking <code>" + pc.maskSelector.join("</code>, <code>") + "</code>" : "") + ". This page deliberately ignores that (it pins remote config to a copy taken before any central rules existed) so you can see each level on its own. The <a href=\"../tenant-control/\">tenant-control page</a> uses the live settings."
+      : "The project has no central privacy settings yet, so what you see here is also what a live page would do.";
+  }).catch(function () { document.getElementById("live-project-note").textContent = ""; });
 
   document.getElementById("kyb-masking").addEventListener("submit", function (e) { e.preventDefault(); this.querySelector("button").textContent = "Submitted (intercepted in page)"; });
   WireInspector.mount(document.getElementById("wire-panel"));

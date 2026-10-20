@@ -109,7 +109,7 @@
   // Show the exact remote config this project serves right now, side by side with what the page asked for.
   var url = "https://sr-client-cfg.amplitude.com/config/" + window.MVSI_CONFIG.apiKey + "?config_group=browser";
   var panel = document.getElementById("remote-panel");
-  fetch(url).then(function (r) { return r.json(); }).then(function (cfg) {
+  fetch(url, { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (cfg) {
     var sr = (cfg.configs && cfg.configs.sessionReplay) || {};
     var pc = sr.sr_privacy_config || sr.privacyConfig || {};
     var hasRules = Object.keys(sr).length > 0;
