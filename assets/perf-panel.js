@@ -98,8 +98,10 @@
       "<dt>Long tasks</dt><dd>" + d.longTasks + " (" + fmtMs(d.longTaskMs) + " total, TBT " + fmtMs(d.tbt) + ")</dd>" +
       "<dt>CLS / INP</dt><dd>" + d.cls.toFixed(3) + " / " + fmtMs(d.inp) + "</dd>" +
       "</dl>" +
-      (rows ? '<table><thead><tr><th>Script</th><th class="num">Bytes</th><th class="num">Fetch</th></tr></thead><tbody>' + rows + "</tbody></table>" : "<p class=\"muted small\">No third-party scripts on this page.</p>") +
-      '<p class="muted small">* cdn.amplitude.com does not send Timing-Allow-Origin, so the browser hides transfer sizes; starred values are from a curl measurement of the same URL. Use WebPageTest for authoritative bytes and filmstrips.</p>' +
+      (rows ? '<table><thead><tr><th>Script</th><th class="num">Bytes</th><th class="num">Fetch</th></tr></thead><tbody>' + rows + "</tbody></table>" : "<p class=\"muted small\">No third-party scripts.</p>") +
+      // Kept short and collapsed on purpose: a long paragraph rendered after load
+      // became the page's Largest Contentful Paint on the baseline variant.
+      '<details class="small muted"><summary>About these numbers</summary>* cdn.amplitude.com sends no Timing-Allow-Origin header, so the browser hides transfer sizes; starred values come from a curl measurement of the same URL. WebPageTest is authoritative for bytes and filmstrips.</details>' +
       '<p><button class="secondary" id="perf-copy">Copy as JSON</button> <button class="secondary" id="perf-refresh">Refresh</button></p>';
     panel.querySelector("#perf-copy").onclick = function () {
       var out = Object.assign({}, d, { scripts: d.scripts.map(function (r) { return { url: r.name, bytes: r.transferSize || knownSize(r.name), ms: Math.round(r.duration) }; }), beacons: d.beacons.length, url: location.href, ua: navigator.userAgent, at: new Date().toISOString() });
@@ -112,7 +114,10 @@
   window.addEventListener("load", function () {
     var panel = document.getElementById("perf-panel");
     if (!panel) return;
-    setTimeout(function () { render(panel); }, 1500);
+    // Render at load, not after a delay, so the panel is on screen with the
+    // rest of the page rather than appearing later as a fresh paint. Refresh
+    // once more after beacons and remote config have had time to go out.
+    render(panel);
     setTimeout(function () { render(panel); }, 6000);
   });
 })();
