@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>2 · Data collection and masking · MVSI technical review</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<!-- The inspector must load before the SDK so it can observe every request. It changes nothing. -->
+<script src="../assets/wire-inspector.js?v=3"></script>
+<script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"></script>
+<script src="https://cdn.amplitude.com/libs/plugin-session-replay-browser-1.36.3-min.js.gz"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var level = params.get("level") || "medium";
+  if (["light", "medium", "conservative"].indexOf(level) < 0) level = "medium";
+  window.MASK_LEVEL = level;
+  // This page demonstrates what the SDK does ON ITS OWN at each level, so it
+  // points the remote-config fetch at a same-origin file that returns an empty
+  // config. The tenant-control page does the opposite and lets the project's
+  // central settings win. Both are documented options (configServerUrl is the
+  // proxy hook); nothing else differs between the two pages.
+  var pinnedConfig = location.origin + location.pathname.replace(/masking\/.*$/, "") + "sr-config";
+  amplitude.add(window.sessionReplay.plugin({
+    sampleRate: 1,
+    // Demo-only: upload sooner so the panel fills while you watch. Production uses the defaults.
+    flushIntervalConfig: { minIntervalMs: 1000, maxIntervalMs: 3000 },
+    eagerFullSnapshotSend: true,
+    performanceConfig: { enabled: true, timeout: 1000 },   // documented: cap how long deferred compression waits for an idle period
+    debugMode: params.get("debug") === "1",   // ?debug=1 makes the plugin ignore window focus (documented for local testing)
+    logLevel: params.get("debug") === "1" ? 4 : 2,
+    configServerUrl: pinnedConfig,   // fetches <configServerUrl>/<apiKey>?config_group=browser
+    privacyConfig: {
+      defaultMaskLevel: level,
+      // Page-level overrides, the same on every level so you can see them work:
+      maskSelector: [".mask-me"],         // mask this static text even at Light
+      unmaskSelector: [".unmask-me"],     // show this input even at Conservative
+      blockSelector: [".block-me"]        // replace this box with an empty placeholder
+    }
+  }));
+  amplitude.init(window.MVSI_CONFIG.apiKey, {
+    logLevel: params.get("debug") === "1" ? 4 : 2,
+    fetchRemoteConfig: false,            // keep the analytics SDK on local config too, for the same reason
+    autocapture: true,
+    flushIntervalMillis: 2000           // flush quickly so the panel updates while you watch
+  });
+})();
+</script>
+</head>
+<body data-variant="masking">
+<main class="wrap">
+  <h1>2. Data collection and masking</h1>
+  <p class="lede">What leaves the browser, and how masking is applied before anything is transmitted. Pick a level, type into the form, then search the captured payloads for what you typed.</p>
+
+  <p>
+    <span class="toggle-group" id="level-toggle">
+      <a href="?level=light" data-level="light">Light</a><a href="?level=medium" data-level="medium">Medium</a><a href="?level=conservative" data-level="conservative">Conservative</a>
+    </span>
+    <span class="small muted" style="margin-left:10px">Current: <strong id="level-label"></strong>. Switching reloads the page and reinitialises the SDK.</span>
+  </p>
+
+  <div class="two-col">
+    <div>
+      <div class="panel amp-block" style="margin-bottom:14px">
+        <h3>What this level masks <small>SDK rule, evaluated against this page</small></h3>
+        <div id="level-explain" class="small"></div>
+      </div>
+
+      <div class="kyb" id="masking-form-host">
+        <form id="kyb-masking" name="kyb-masking" action="/kyb/sample" method="post" novalidate>
+          <legend style="font-size:1.15rem;font-weight:600">Sample KYB fields</legend>
+          <p class="step-help">One of each field type. Red-flag fields are the ones a KYB form actually contains.</p>
+          <div class="fields">
+            <div class="field"><label for="f_name">Director full name <span class="muted">(text)</span></label><input id="f_name" name="name" type="text" autocomplete="name" placeholder="e.g. Jane Citizen"></div>
+            <div class="field"><label for="f_email">Email <span class="muted">(type=email)</span></label><input id="f_email" name="email" type="email" autocomplete="email"></div>
+            <div class="field"><label for="f_tel">Mobile <span class="muted">(type=tel)</span></label><input id="f_tel" name="tel" type="tel" autocomplete="tel"></div>
+            <div class="field"><label for="f_dob">Date of birth <span class="muted">(type=date)</span></label><input id="f_dob" name="dob" type="date" autocomplete="bday"></div>
+            <div class="field"><label for="f_abn">ABN <span class="muted">(text, numeric)</span></label><input id="f_abn" name="abn" type="text" inputmode="numeric"></div>
+            <div class="field"><label for="f_tfn">Tax file number <span class="muted">(text, no hint)</span></label><input id="f_tfn" name="tfn" type="text" inputmode="numeric"></div>
+            <div class="field"><label for="f_licence">Driver licence number <span class="muted">(text)</span></label><input id="f_licence" name="licence" type="text"></div>
+            <div class="field"><label for="f_cc">Card number <span class="muted">(autocomplete=cc-number)</span></label><input id="f_cc" name="cc" type="text" autocomplete="cc-number" inputmode="numeric"></div>
+            <div class="field"><label for="f_pw">Password <span class="muted">(type=password)</span></label><input id="f_pw" name="pw" type="password" autocomplete="new-password"></div>
+            <div class="field"><label for="f_amount">Monthly volume <span class="muted">(type=number)</span></label><input id="f_amount" name="amount" type="number" min="0"></div>
+            <div class="field"><label for="f_state">State <span class="muted">(select)</span></label><select id="f_state" name="state"><option value="">Select…</option><option>NSW</option><option>VIC</option><option>QLD</option><option>WA</option></select></div>
+            <div class="field"><label for="f_file">Identity document <span class="muted">(file)</span></label><input id="f_file" name="doc" type="file"></div>
+            <div class="field wide"><label for="f_notes">Notes <span class="muted">(textarea)</span></label><textarea id="f_notes" name="notes"></textarea></div>
+            <div class="field wide"><label>Politically exposed? <span class="muted">(radio)</span></label><div class="choices"><label><input type="radio" name="pep" value="no"> No</label><label><input type="radio" name="pep" value="yes"> Yes</label></div></div>
+            <div class="field wide"><label style="font-weight:400"><input type="checkbox" name="decl"> I confirm the above is accurate <span class="muted">(checkbox)</span></label></div>
+            <div class="field wide"><label for="f_public">Reference code <span class="muted">(input with class <code>unmask-me</code>: visible at every level)</span></label><input id="f_public" name="ref" type="text" class="unmask-me" value="KYB-2026-0042"></div>
+          </div>
+          <div class="actions"><span></span><button type="submit">Submit sample</button></div>
+        </form>
+      </div>
+
+      <h3>Static page text, not inputs</h3>
+      <p class="small muted">Masking levels treat page text differently from inputs. These blocks show the difference.</p>
+      <div class="pii-block">Plain paragraph: Director <strong>Jane Citizen</strong>, born 14 March 1981, ABN 51 824 753 556, jane.citizen@example.com, 0412 345 678. <span class="muted">(masked only at Conservative)</span></div>
+      <div class="pii-block mask-me">Same text with class <code>mask-me</code>, listed in <code>maskSelector</code>: Director Jane Citizen, 0412 345 678. <span class="muted">(masked at every level)</span></div>
+      <div class="pii-block block-me" style="height:60px">A box with class <code>block-me</code>, listed in <code>blockSelector</code>: replaced by an empty placeholder of the same size.</div>
+      <div class="pii-block" title="Attribute values are not masked: this title holds a secret" data-customer-id="CUST-99812">A block whose <code>title</code> and <code>data-customer-id</code> attributes hold values. Attribute values are not covered by masking at any level (<a href="https://amplitude.com/docs/session-replay/manage-privacy-settings-for-session-replay" rel="noopener">documented limitation</a>). Look for <code>CUST-99812</code> in the payload.</div>
+    </div>
+
+    <aside class="sticky">
+      <div class="panel amp-block" id="wire-panel"><h3>What left the browser</h3><p class="muted small">Waiting for the first request…</p></div>
+    </aside>
+  </div>
+
+  <h2>How to read the network tab instead</h2>
+  <ol>
+    <li>Open DevTools → Network, tick <strong>Preserve log</strong>, filter on <span class="mono">amplitude</span>.</li>
+    <li><span class="mono">sr-client-cfg.amplitude.com/config</span> (or, on this page, <span class="mono">/sr-config/&lt;api key&gt;</span>, a pinned copy of the project config from before any central rules existed): the remote-config fetch. Session Replay will not record if this fails when remote config is on; it fails closed.</li>
+    <li><span class="mono">api2.amplitude.com/2/httpapi</span>: analytics events as plain JSON. Autocapture events carry element IDs, classes, tags, hierarchy and visible text, never input values. Text matching email, credit card or social security patterns is masked by pattern (<a href="https://amplitude.com/docs/data/autocapture#default-autocapture-protections" rel="noopener">docs</a>).</li>
+    <li><span class="mono">api-sr.amplitude.com/sessions/v2/track</span>: the replay payload. It is rrweb JSON (a full DOM snapshot, then diffs), gzipped. The panel on the right decodes it and lists every input value and text node it contains, so you can see asterisks where masking applied. Attribute values, image URLs and stylesheet URLs are sent as-is.</li>
+  </ol>
+
+  <h2>What the three levels mean, from the SDK's own rule</h2>
+  <table>
+    <thead><tr><th>Level</th><th>Inputs masked</th><th>Page text masked</th><th>Who it suits</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Light</strong></td><td>Only <span class="mono">type=password</span>, <span class="mono">hidden</span>, <span class="mono">email</span>, <span class="mono">tel</span>, and any input whose <span class="mono">autocomplete</span> starts with <span class="mono">cc-</span>. Everything else is sent in clear, including a TFN typed into a plain text box.</td><td>None, unless you add <span class="mono">maskSelector</span> or <span class="mono">.amp-mask</span>.</td><td>Low-sensitivity products. Not a KYB form.</td></tr>
+      <tr><td><strong>Medium</strong> (default)</td><td>All <span class="mono">&lt;input&gt;</span>, <span class="mono">&lt;select&gt;</span> and <span class="mono">&lt;textarea&gt;</span> values.</td><td>None by default. Labels, headings and any PII rendered as text stay visible.</td><td>Most products. For KYB, fine for the inputs, but review-step summaries that render the applicant's data as text are exposed.</td></tr>
+      <tr><td><strong>Conservative</strong></td><td>Everything.</td><td>All text nodes, including labels and links. Images and attribute values are not text and are not masked.</td><td>Financial services, healthcare, KYB. Combine with <span class="mono">unmaskSelector</span> for navigation labels so replays stay readable.</td></tr>
+    </tbody>
+  </table>
+  <div class="note">Masking is applied in the browser while the DOM snapshot is built. The asterisks you see in the payload are what Amplitude stores. There is no unmasked copy anywhere, which is also why rule changes cannot be applied retroactively (see <a href="../recording-privacy/">recording-time privacy</a>).</div>
+  <p class="small muted">Source for the rule: the mask-level function in <span class="mono">plugin-session-replay-browser 1.36.3</span>, read directly from the minified bundle, and <a href="https://amplitude.com/docs/session-replay/manage-privacy-settings-for-session-replay" rel="noopener">Manage privacy settings for Session Replay</a>.</p>
+</main>
+<script src="../assets/nav.js"></script>
+<script>
+(function () {
+  var level = window.MASK_LEVEL;
+  document.getElementById("level-label").textContent = level;
+  document.querySelectorAll("#level-toggle a").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-level") === level); });
+
+  // Re-implement the SDK's rule so the page can say, per field, what will happen.
+  function maskedByLevel(el) {
+    var tag = el.tagName.toLowerCase();
+    if (el.closest(".unmask-me")) return { masked: false, why: "unmaskSelector" };
+    if (el.closest(".mask-me")) return { masked: true, why: "maskSelector" };
+    if (level === "conservative") return { masked: true, why: "conservative masks everything" };
+    if (level === "medium") return { masked: tag === "input" || tag === "select" || tag === "textarea", why: "medium masks all inputs" };
+    var t = (el.type || "").toLowerCase();
+    var ac = (el.getAttribute("autocomplete") || "");
+    if (tag !== "input") return { masked: false, why: "light only looks at inputs" };
+    if (["password", "hidden", "email", "tel"].indexOf(t) >= 0) return { masked: true, why: "light: type=" + t };
+    if (ac.indexOf("cc-") === 0) return { masked: true, why: "light: autocomplete=" + ac };
+    return { masked: false, why: "light: plain " + (t || tag) + " is sent in clear" };
+  }
+  var rows = [];
+  document.querySelectorAll("#kyb-masking input, #kyb-masking select, #kyb-masking textarea").forEach(function (el) {
+    if (el.type === "radio" && el.value !== "no") return;
+    var r = maskedByLevel(el);
+    var label = el.closest(".field") ? el.closest(".field").querySelector("label").textContent.replace(/\(.*\)/, "").trim() : el.name;
+    rows.push("<tr><td>" + label + "</td><td class=\"mono\">" + (el.type || el.tagName.toLowerCase()) + (el.getAttribute("autocomplete") ? " · " + el.getAttribute("autocomplete") : "") + "</td><td>" + (r.masked ? '<span class="badge ok">masked</span>' : '<span class="badge bad">sent in clear</span>') + ' <span class="muted">' + r.why + "</span></td></tr>");
+  });
+  document.getElementById("level-explain").innerHTML = '<table><thead><tr><th>Field</th><th>Type</th><th>At ' + level + "</th></tr></thead><tbody>" + rows.join("") + "</tbody></table>" +
+    '<p class="muted">Static text: ' + (level === "conservative" ? "masked" : "sent in clear, except the <code>mask-me</code> block") + ". Attribute values: sent in clear at every level.</p>";
+
+  document.getElementById("kyb-masking").addEventListener("submit", function (e) { e.preventDefault(); this.querySelector("button").textContent = "Submitted (intercepted in page)"; });
+  WireInspector.mount(document.getElementById("wire-panel"));
+})();
+</script>
+</body>
+</html>

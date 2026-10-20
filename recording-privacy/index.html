@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4 · Recording-time privacy · MVSI technical review</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<script src="../assets/wire-inspector.js?v=3"></script>
+<script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"></script>
+<script src="https://cdn.amplitude.com/libs/plugin-session-replay-browser-1.36.3-min.js.gz"></script>
+<script>
+(function () {
+  var params = new URLSearchParams(location.search);
+  var level = params.get("level") || "medium";
+  if (["light", "medium", "conservative"].indexOf(level) < 0) level = "medium";
+  window.MASK_LEVEL = level;
+  var pinnedConfig = location.origin + location.pathname.replace(/recording-privacy\/.*$/, "") + "sr-config";
+  amplitude.add(window.sessionReplay.plugin({
+    sampleRate: 1,
+    flushIntervalConfig: { minIntervalMs: 1000, maxIntervalMs: 3000 },
+    eagerFullSnapshotSend: true,
+    performanceConfig: { enabled: true, timeout: 1000 },   // documented: cap how long deferred compression waits for an idle period
+    debugMode: params.get("debug") === "1",   // ?debug=1 makes the plugin ignore window focus (documented for local testing)
+    logLevel: params.get("debug") === "1" ? 4 : 2,
+    configServerUrl: pinnedConfig,
+    privacyConfig: { defaultMaskLevel: level }
+  }));
+  amplitude.init(window.MVSI_CONFIG.apiKey, { fetchRemoteConfig: false, autocapture: { sessions: true, pageViews: true, attribution: false, formInteractions: false, elementInteractions: false, fileDownloads: false }, flushIntervalMillis: 2000 });
+})();
+</script>
+</head>
+<body data-variant="recording-privacy">
+<main class="wrap">
+  <h1>4. Recording-time privacy</h1>
+  <p class="lede">Where masking happens, what it cannot cover, and what changing a rule does to replays that already exist.</p>
+
+  <h2>Masking happens in the browser, once, at capture time</h2>
+  <p>Session Replay builds an rrweb snapshot of the DOM in the visitor's browser. While it serialises each node it applies the mask rules: a masked text node is written out as asterisks, a masked input's value is written out as asterisks, a blocked element is written out as an empty box of the same size. The unmasked value is never serialised, so there is no unmasked copy to transmit, store or leak. Amplitude's documentation puts it as: "Masking data prevents Amplitude from receiving it from your product." (<a href="https://amplitude.com/docs/session-replay/manage-privacy-settings-for-session-replay" rel="noopener">docs</a>)</p>
+  <p>You can verify that claim on this page. The right-hand panel shows every replay payload before it leaves, decoded. Type something below and search for it.</p>
+
+  <div class="two-col">
+    <div>
+      <div class="kyb">
+        <form id="rp-form" name="rp-form" action="/kyb/rp" novalidate>
+          <legend style="font-size:1.15rem;font-weight:600">Type anything</legend>
+          <div class="fields">
+            <div class="field"><label for="rp_name">Name</label><input id="rp_name" name="name" type="text"></div>
+            <div class="field"><label for="rp_tfn">Tax file number</label><input id="rp_tfn" name="tfn" type="text" inputmode="numeric"></div>
+            <div class="field wide"><label for="rp_notes">Notes</label><textarea id="rp_notes" name="notes"></textarea></div>
+          </div>
+          <p class="small muted">Masking level on this page: <strong id="level-label"></strong> ·
+            <span class="toggle-group" id="level-toggle" style="vertical-align:middle"><a href="?level=light" data-level="light">Light</a><a href="?level=medium" data-level="medium">Medium</a><a href="?level=conservative" data-level="conservative">Conservative</a></span></p>
+        </form>
+      </div>
+
+      <h2>What happens when the rules change after a recording exists</h2>
+      <table>
+        <thead><tr><th>Scenario</th><th>Effect on new sessions</th><th>Effect on replays already captured</th></tr></thead>
+        <tbody>
+          <tr><td>Tighten masking (Medium → Conservative, or add a mask selector)</td><td>Applied from the next page load that fetches the config. Project settings take effect on next load; Autocapture settings within about 10 minutes.</td><td><strong>None.</strong> Those replays were stored with whatever was visible at capture time. There is no retroactive masking, because the server never had the unmasked data to re-process in the first place and cannot add masking to text it does hold.</td></tr>
+          <tr><td>Loosen masking (Conservative → Light, or add an unmask selector)</td><td>Applied from the next page load.</td><td><strong>None.</strong> Masked content in existing replays stays masked forever; the asterisks are all that was ever received.</td></tr>
+          <tr><td>A field was exposed by mistake and recorded</td><td>Fix the rule centrally; new sessions are safe.</td><td>The exposure is in stored replays until they expire or are deleted. Remedies: delete the affected users' replays through the <a href="https://amplitude.com/docs/apis/analytics/user-privacy" rel="noopener">User Privacy API</a> (removes all replays for a user), or delete the project. Default retention is 30 days from ingestion; extended retention up to 12 months is optional (<a href="https://amplitude.com/docs/session-replay/replay-data-lifecycle" rel="noopener">docs</a>).</td></tr>
+          <tr><td>Remote config endpoint unreachable</td><td>Session Replay records nothing. It fails closed rather than falling back to possibly weaker local rules.</td><td>n/a</td></tr>
+          <tr><td>Change retention period</td><td>Applies to replays ingested after the change.</td><td>Keep the retention period they were ingested under. Bookmarked replays are exempt from retention until unbookmarked.</td></tr>
+        </tbody>
+      </table>
+
+      <h2>Limits worth stating plainly</h2>
+      <ul>
+        <li><strong>HTML attribute values are not masked</strong> at any level: <span class="mono">value</span>, <span class="mono">placeholder</span>, <span class="mono">title</span>, <span class="mono">alt</span>, <span class="mono">aria-label</span>, <span class="mono">data-*</span>. A form renderer that writes an applicant's name into a <span class="mono">title</span> attribute defeats masking. Block the element or stop writing data into attributes.</li>
+        <li><strong>Text inside images, videos and canvases</strong> is not text and is not masked. Uploaded identity documents shown as image previews must be blocked (<span class="mono">.amp-block</span> or <span class="mono">blockSelector</span>).</li>
+        <li><strong>URLs</strong> are recorded as-is unless <span class="mono">ugcFilterRules</span> rewrite them. An application ID in the path is visible in the replay list.</li>
+        <li><strong>Light level is narrow</strong>: it masks only password, hidden, email and tel inputs plus card fields hinted with <span class="mono">autocomplete="cc-"</span>. A tax file number in a plain text input is sent in clear at Light.</li>
+        <li><strong>Autocapture is separate</strong> from replay masking. It never collects input values, and it pattern-masks element text that looks like an email, card or social security number, but the text of a review-step summary ("Director: Jane Citizen") is element text and would be captured on a click unless the element carries <span class="mono">data-amp-mask</span>.</li>
+        <li><strong>Masking is per project, not per tenant form</strong>, unless each tenant is a project or the rules target a shared selector. The <a href="../tenant-control/">tenant-control page</a> covers that.</li>
+      </ul>
+
+      <h2>Validating this with MVSI</h2>
+      <ol>
+        <li>Set the project's level and overrides in Session Replay Settings.</li>
+        <li>Capture a test session on a real tenant form with known test values (<a href="https://amplitude.com/docs/session-replay/verify-capture" rel="noopener">verify-capture procedure</a>). Replays appear about five minutes after the session starts.</li>
+        <li>Open the replay and confirm the test values are asterisks. Search the replay list for the application ID to check URL exposure.</li>
+        <li>Change the level, capture a second session, and confirm the first replay is unchanged. That demonstrates both the prospective effect and the absence of retroactive change.</li>
+        <li>Run a User Privacy API deletion for the test user and confirm both replays disappear.</li>
+      </ol>
+    </div>
+    <aside class="sticky">
+      <div class="panel amp-block" id="wire-panel"><h3>What left the browser</h3><p class="muted small">Waiting for the first request…</p></div>
+    </aside>
+  </div>
+</main>
+<script src="../assets/nav.js"></script>
+<script>
+(function () {
+  var level = window.MASK_LEVEL;
+  document.getElementById("level-label").textContent = level;
+  document.querySelectorAll("#level-toggle a").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-level") === level); });
+  document.getElementById("rp-form").addEventListener("submit", function (e) { e.preventDefault(); });
+  WireInspector.mount(document.getElementById("wire-panel"));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KYB onboarding · Analytics + Autocapture</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<!-- ===== Amplitude SDK for this variant (Analytics, Autocapture) ===== -->
+<script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"></script>
+<script>
+window.__ampPerf = { t0: performance.now() };
+amplitude.init("f191237affdc9c7730461b55cce0f71d", {
+  fetchRemoteConfig: true,
+  autocapture: true   // sessions, page views, attribution, file downloads, form interactions, element interactions
+}).promise.then(function () { window.__ampPerf.sdkReady = performance.now(); });
+</script>
+<!-- ===== end SDK ===== -->
+<script src="../assets/perf-panel.js"></script>
+</head>
+<body data-variant="autocapture">
+<main class="wrap">
+  <h1>KYB onboarding form <span class="badge">Analytics + Autocapture</span></h1>
+  <p class="lede">Same SDK file, with element interactions and form interactions on. No extra script; the cost is runtime listeners and event volume.</p>
+  <div class="two-col">
+    <div>
+      <div id="kyb-form"></div>
+    </div>
+    <aside class="sticky">
+      <div class="panel" id="perf-panel"><h3>What this page measured</h3><p class="muted small">Collecting…</p></div>
+      <details class="panel" style="margin-top:12px">
+        <summary><strong>Exactly what is in this page's &lt;head&gt;</strong></summary>
+        <pre style="font-size:0.72rem">&lt;script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"&gt;&lt;/script&gt;
+&lt;script&gt;
+window.__ampPerf = { t0: performance.now() };
+amplitude.init("f191237affdc9c7730461b55cce0f71d", {
+  fetchRemoteConfig: true,
+  autocapture: true   // sessions, page views, attribution, file downloads, form interactions, element interactions
+}).promise.then(function () { window.__ampPerf.sdkReady = performance.now(); });
+&lt;/script&gt;</pre>
+      </details>
+      <p class="small muted" style="margin-top:12px">Components: Analytics, Autocapture. <a href="./">Back to the comparison</a>.</p>
+    </aside>
+  </div>
+</main>
+<script src="../assets/kyb-form.js"></script>
+<script src="../assets/nav.js"></script>
+<script>KYBForm.mount(document.getElementById("kyb-form"));</script>
+</body>
+</html>

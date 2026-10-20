@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KYB onboarding · No SDK (baseline)</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<!-- ===== Amplitude SDK for this variant (none) ===== -->
+
+<!-- ===== end SDK ===== -->
+<script src="../assets/perf-panel.js"></script>
+</head>
+<body data-variant="none">
+<main class="wrap">
+  <h1>KYB onboarding form <span class="badge">No SDK (baseline)</span></h1>
+  <p class="lede">The KYB form with no analytics at all. Every other variant is compared against this.</p>
+  <div class="two-col">
+    <div>
+      <div id="kyb-form"></div>
+    </div>
+    <aside class="sticky">
+      <div class="panel" id="perf-panel"><h3>What this page measured</h3><p class="muted small">Collecting…</p></div>
+      <details class="panel" style="margin-top:12px">
+        <summary><strong>Exactly what is in this page's &lt;head&gt;</strong></summary>
+        <pre style="font-size:0.72rem"><!-- no SDK --></pre>
+      </details>
+      <p class="small muted" style="margin-top:12px">Components: none. <a href="./">Back to the comparison</a>.</p>
+    </aside>
+  </div>
+</main>
+<script src="../assets/kyb-form.js"></script>
+<script src="../assets/nav.js"></script>
+<script>KYBForm.mount(document.getElementById("kyb-form"));</script>
+</body>
+</html>

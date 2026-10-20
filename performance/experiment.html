@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KYB onboarding · Analytics + Feature Experiment</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<!-- ===== Amplitude SDK for this variant (Analytics, Experiment) ===== -->
+<script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"></script>
+<script src="https://unpkg.com/@amplitude/experiment-js-client@1.24.0/dist/experiment.umd.js"></script>
+<script>
+window.__ampPerf = { t0: performance.now() };
+amplitude.init("f191237affdc9c7730461b55cce0f71d", {
+  fetchRemoteConfig: true,
+  autocapture: { sessions: true, pageViews: true, attribution: true,
+                 fileDownloads: false, formInteractions: false, elementInteractions: false }
+}).promise.then(function () {
+  // The project API key doubles as a deployment key. Replace with a dedicated
+  // client-side deployment key if you create one in Experiment.
+  window.experiment = Experiment.initializeWithAmplitudeAnalytics("f191237affdc9c7730461b55cce0f71d");
+  return window.experiment.fetch();
+}).then(function () {
+  window.__ampPerf.sdkReady = performance.now();
+  var v = window.experiment.variant("kyb-form-layout", { value: "control" });
+  document.documentElement.setAttribute("data-variant-kyb-form-layout", v.value);
+});
+</script>
+<!-- ===== end SDK ===== -->
+<script src="../assets/perf-panel.js"></script>
+</head>
+<body data-variant="experiment">
+<main class="wrap">
+  <h1>KYB onboarding form <span class="badge">Analytics + Feature Experiment</span></h1>
+  <p class="lede">Adds the Experiment JavaScript client and fetches variants after analytics initialises.</p>
+  <div class="two-col">
+    <div>
+      <div id="kyb-form"></div>
+    </div>
+    <aside class="sticky">
+      <div class="panel" id="perf-panel"><h3>What this page measured</h3><p class="muted small">Collecting…</p></div>
+      <details class="panel" style="margin-top:12px">
+        <summary><strong>Exactly what is in this page's &lt;head&gt;</strong></summary>
+        <pre style="font-size:0.72rem">&lt;script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"&gt;&lt;/script&gt;
+&lt;script src="https://unpkg.com/@amplitude/experiment-js-client@1.24.0/dist/experiment.umd.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+window.__ampPerf = { t0: performance.now() };
+amplitude.init("f191237affdc9c7730461b55cce0f71d", {
+  fetchRemoteConfig: true,
+  autocapture: { sessions: true, pageViews: true, attribution: true,
+                 fileDownloads: false, formInteractions: false, elementInteractions: false }
+}).promise.then(function () {
+  // The project API key doubles as a deployment key. Replace with a dedicated
+  // client-side deployment key if you create one in Experiment.
+  window.experiment = Experiment.initializeWithAmplitudeAnalytics("f191237affdc9c7730461b55cce0f71d");
+  return window.experiment.fetch();
+}).then(function () {
+  window.__ampPerf.sdkReady = performance.now();
+  var v = window.experiment.variant("kyb-form-layout", { value: "control" });
+  document.documentElement.setAttribute("data-variant-kyb-form-layout", v.value);
+});
+&lt;/script&gt;</pre>
+      </details>
+      <p class="small muted" style="margin-top:12px">Components: Analytics, Experiment. <a href="./">Back to the comparison</a>.</p>
+    </aside>
+  </div>
+</main>
+<script src="../assets/kyb-form.js"></script>
+<script src="../assets/nav.js"></script>
+<script>KYBForm.mount(document.getElementById("kyb-form"));</script>
+</body>
+</html>

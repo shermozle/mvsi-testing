@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>5 · Form instrumentation · MVSI technical review</title>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>5. Form instrumentation</h1>
+  <p class="lede">A manageable event model for hundreds of fields across many interlocking forms, built in MVSI's form engine once rather than in each tenant's form. Starts with Autocapture, grows into precise instrumentation as the team learns what questions it asks, and never collects a field value.</p>
+
+  <h2>The design constraint</h2>
+  <p>MVSI's situation differs from a product team instrumenting one checkout. There are hundreds of fields, many forms, forms that branch into other forms, and many tenants, each with their own configuration. Field-by-field tracking code does not scale and would be impossible to govern. What does scale is the fact that MVSI renders every form from configuration: the renderer is the single place that knows every field's identity, type, step, validation state and timing. Instrument the renderer and every tenant form is instrumented.</p>
+  <p>The second constraint is privacy. Friction analysis needs to know <em>that</em> a field was changed, corrected, left blank or failed validation, and how long it took. It never needs the value. The model below has no property that can carry a value, and Amplitude Data's schema enforcement can reject any that appears.</p>
+
+  <h2>Phase 1: Autocapture, no code</h2>
+  <p>Turn on Browser SDK 2 Autocapture with form and element interactions. For a form built from <span class="mono">&lt;form&gt;</span>, <span class="mono">&lt;input&gt;</span>, <span class="mono">&lt;select&gt;</span> and <span class="mono">&lt;textarea&gt;</span> this already gives:</p>
+  <table>
+    <thead><tr><th>Event</th><th>Fires when</th><th>Useful properties</th><th>What it does not carry</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mono">[Amplitude] Page Viewed</span></td><td>Each page or SPA route change</td><td>Page URL, path, title</td><td>Query strings are in Page Location; use URL filters if IDs appear there</td></tr>
+      <tr><td><span class="mono">[Amplitude] Form Started</span></td><td>First interaction with a <span class="mono">&lt;form&gt;</span></td><td>Form ID, Form Name, Form Destination</td><td>Nothing about fields</td></tr>
+      <tr><td><span class="mono">[Amplitude] Form Submitted</span></td><td>Submit event on the form</td><td>Form ID, Form Name, Form Destination</td><td>Whether submission succeeded server-side</td></tr>
+      <tr><td><span class="mono">[Amplitude] Element Changed</span></td><td>Change on an input, select or textarea</td><td>Element ID, class, tag, hierarchy, parent label, position, page</td><td><strong>Never the value.</strong> For inputs, selects, textareas and contenteditable, only class and type are collected</td></tr>
+      <tr><td><span class="mono">[Amplitude] Element Clicked</span></td><td>Click on interactive elements, or clicks that change the page</td><td>Element text, ID, class, hierarchy, href</td><td>Text that pattern-matches email, card or SSN is masked; add <span class="mono">data-amp-mask</span> on review-step summaries</td></tr>
+      <tr><td><span class="mono">[Amplitude] Web Vitals</span></td><td>Tab hidden</td><td>LCP, INP, CLS, FCP, TTFB per page</td><td></td></tr>
+      <tr><td>Frustration interactions</td><td>Rage clicks, dead clicks (when enabled)</td><td>Element and page</td><td></td></tr>
+    </tbody>
+  </table>
+  <p>With nothing but stable <span class="mono">id</span> attributes on fields, this answers: which forms are started and not submitted, which step people are on when they leave (via page or hash URL), which fields are touched most, where rage clicks cluster, and what performance looks like per page. The <a href="../performance/autocapture.html">autocapture variant</a> of the KYB form is instrumented exactly this way.</p>
+  <p>Where it runs out: Autocapture cannot see validation errors, cannot time how long a field took, does not know which step a field belongs to in a single-URL wizard, and element IDs are only as good as the renderer makes them.</p>
+
+  <h2>Phase 2: a small, fixed event model in the form engine</h2>
+  <p>Eight events, one set of shared properties, implemented once in MVSI's renderer. Every property is an identifier, a count, a duration or a category. None is free text from the applicant.</p>
+
+  <h3>Shared properties on every form event</h3>
+  <table>
+    <thead><tr><th>Property</th><th>Type</th><th>Example</th><th>Why</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mono">tenant_id</span></td><td>string</td><td><span class="mono">acme-lending</span></td><td>Also set as a user group so you can compare tenants with Accounts.</td></tr>
+      <tr><td><span class="mono">form_id</span></td><td>string</td><td><span class="mono">kyb-onboarding</span></td><td>Stable identifier from form configuration, not the display name.</td></tr>
+      <tr><td><span class="mono">form_version</span></td><td>string</td><td><span class="mono">2026.10</span></td><td>Forms change; comparisons need a version.</td></tr>
+      <tr><td><span class="mono">application_id</span></td><td>string (opaque)</td><td><span class="mono">app_7f3a…</span></td><td>Joins sessions to one application across days and devices. Never a human identifier.</td></tr>
+      <tr><td><span class="mono">step_id</span>, <span class="mono">step_index</span>, <span class="mono">steps_total</span></td><td>string, int, int</td><td><span class="mono">directors</span>, 3, 6</td><td>Funnels per step without relying on URLs.</td></tr>
+      <tr><td><span class="mono">entry_point</span></td><td>enum</td><td><span class="mono">resume</span> / <span class="mono">new</span></td><td>Returning applicants behave differently.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>The events</h3>
+  <table>
+    <thead><tr><th>Event</th><th>When</th><th>Event-specific properties</th></tr></thead>
+    <tbody>
+      <tr><td><span class="mono">Form Started</span></td><td>Form first rendered for an application</td><td><span class="mono">fields_total</span>, <span class="mono">prefilled_fields</span></td></tr>
+      <tr><td><span class="mono">Form Step Viewed</span></td><td>Step shown</td><td><span class="mono">fields_in_step</span>, <span class="mono">required_in_step</span></td></tr>
+      <tr><td><span class="mono">Field Interacted</span></td><td>First focus on a field within a step view</td><td><span class="mono">field_id</span>, <span class="mono">field_type</span> (text, select, date, file…), <span class="mono">field_group</span> (director 2), <span class="mono">is_required</span>, <span class="mono">is_sensitive</span></td></tr>
+      <tr><td><span class="mono">Field Completed</span></td><td>Blur with a non-empty value</td><td>the <span class="mono">field_*</span> set plus <span class="mono">seconds_in_field</span>, <span class="mono">edit_count</span>, <span class="mono">value_length_bucket</span> (0, 1–10, 11–50, 51+), <span class="mono">was_prefilled</span>, <span class="mono">used_autocomplete</span></td></tr>
+      <tr><td><span class="mono">Field Validation Failed</span></td><td>Client or server validation rejects the field</td><td>the <span class="mono">field_*</span> set plus <span class="mono">error_code</span> (required, format, range, mismatch, server), <span class="mono">attempt</span></td></tr>
+      <tr><td><span class="mono">Form Step Completed</span></td><td>Step passes validation and advances</td><td><span class="mono">seconds_on_step</span>, <span class="mono">validation_failures</span>, <span class="mono">back_navigations</span></td></tr>
+      <tr><td><span class="mono">Form Saved</span></td><td>Explicit save-and-exit or autosave</td><td><span class="mono">trigger</span> (manual, auto, timeout), <span class="mono">completion_pct</span></td></tr>
+      <tr><td><span class="mono">Form Submitted</span> / <span class="mono">Form Submission Failed</span></td><td>Final submit result</td><td><span class="mono">seconds_total</span>, <span class="mono">sessions_count</span>, <span class="mono">fields_with_errors</span>; on failure <span class="mono">error_code</span></td></tr>
+    </tbody>
+  </table>
+  <p>That is one <span class="mono">track()</span> call per event type in the renderer, parameterised by field metadata it already holds. The KYB form on this site implements the step and validation events in about 20 lines (see <a href="https://github.com/shermozle/mvsi-testing/blob/main/assets/kyb-form.js" rel="noopener">kyb-form.js</a>).</p>
+
+  <h3>Why not one event per field?</h3>
+  <p>Hundreds of fields as hundreds of event names makes the tracking plan unmanageable and every chart a hunt. One <span class="mono">Field Validation Failed</span> event with <span class="mono">field_id</span> as a property gives a single chart, grouped by field, that ranks every field across every form by failure rate, and a single funnel template that works for any form by filtering on <span class="mono">form_id</span>.</p>
+
+  <h2>Measuring friction without values</h2>
+  <table>
+    <thead><tr><th>Question</th><th>Chart</th><th>Data needed</th></tr></thead>
+    <tbody>
+      <tr><td>Where do applicants abandon?</td><td>Funnel: Form Started → Step Completed (1…n) → Submitted, grouped by <span class="mono">tenant_id</span> or <span class="mono">form_version</span></td><td>Phase 1 (by URL) or Phase 2 (by step)</td></tr>
+      <tr><td>Which fields fail validation most?</td><td>Event segmentation: Field Validation Failed, grouped by <span class="mono">field_id</span> and <span class="mono">error_code</span>, normalised by Field Interacted</td><td>Phase 2</td></tr>
+      <tr><td>Which fields take longest?</td><td>Field Completed, average or p90 of <span class="mono">seconds_in_field</span> by <span class="mono">field_id</span></td><td>Phase 2</td></tr>
+      <tr><td>Which fields are corrected repeatedly?</td><td>Field Completed where <span class="mono">edit_count</span> ≥ 3</td><td>Phase 2</td></tr>
+      <tr><td>What does abandonment look like?</td><td>Session Replay filtered to sessions with Field Validation Failed and no Form Submitted, with masking on</td><td>Session Replay, any phase</td></tr>
+      <tr><td>Are drop-offs related to performance?</td><td>Web Vitals INP by page, compared with step completion rate</td><td>Phase 1</td></tr>
+      <tr><td>Does a change help?</td><td>Experiment on <span class="mono">form_version</span> or a renderer flag, primary metric Form Submitted</td><td>Phase 2 plus Experiment</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Governance at scale</h2>
+  <ul>
+    <li><strong>One tracking plan</strong> in Amplitude Data for the form engine, owned by MVSI. Schema setting: reject unplanned properties, so a stray <span class="mono">value</span> property is dropped on ingest rather than stored. Require team review for changes to main.</li>
+    <li><strong>Field identity</strong> comes from form configuration, not from labels, and is the same identifier used in Session Replay selector overrides (<span class="mono">data-field</span>) and in Autocapture's Element ID. One identifier, three systems.</li>
+    <li><strong>Sensitive flag in configuration.</strong> Fields marked sensitive in MVSI's form config get <span class="mono">data-sensitive</span> in the DOM, which the central mask selector targets, and <span class="mono">is_sensitive: true</span> in events, which lets analysts exclude them from any text-based analysis.</li>
+    <li><strong>Tenancy.</strong> Start with one project and <span class="mono">tenant_id</span> as a group. Split a tenant into its own project only when it needs separate access control or its own masking rules.</li>
+    <li><strong>Autocapture stays on</strong> as the safety net for anything the renderer does not cover, with a page URL exclude list for any admin or internal pages.</li>
+  </ul>
+
+  <h2>Phase 3: what to add once the basics are stable</h2>
+  <ul>
+    <li>Server-side <span class="mono">Application Decisioned</span> events (approved, referred, declined, with reason codes) via the HTTP API, keyed by <span class="mono">application_id</span>, so front-end friction can be read against outcomes.</li>
+    <li>Guides &amp; Surveys targeted at fields with high failure rates: inline help on the field, or a one-question survey on abandonment.</li>
+    <li>Experiments on form structure (step order, grouping, help text) with Form Submitted as the primary metric and Field Validation Failed as a guardrail.</li>
+    <li>Session Replay targeted capture rules: record only sessions that fail validation twice or abandon a step, which concentrates the replay quota on the sessions worth watching.</li>
+  </ul>
+
+  <div class="note">Summary for the proof of concept: enable Autocapture on one tenant's onboarding form, add the eight-event model to the renderer behind a flag, build the funnel and the validation-failure chart, and confirm by network inspection that no payload ever carries a field value. That is a two-week scope with a clear success measure.</div>
+</main>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LogRocket comparison · MVSI technical review</title>
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>LogRocket comparison</h1>
+  <p class="lede">Desk research on LogRocket against the same five questions, from its public documentation, pricing page and live CDN bundles, checked on 20 October 2026. Every claim links to its source. Where LogRocket's docs don't say, this page says so rather than guessing. Full notes with more sources are in <a href="https://github.com/shermozle/mvsi-testing/blob/main/logrocket/research.md" rel="noopener">research.md</a>.</p>
+
+  <h2>Who they are</h2>
+  <p>LogRocket was founded in 2016 in Boston by two ex-Google engineers and has raised roughly $55M, most recently a $25M Series C in 2022 (<a href="https://www.crunchbase.com/organization/logrocket/company_financials" rel="noopener">Crunchbase</a>). It describes itself as a "frontend monitoring and product analytics platform". Its heritage is bug reproduction for developers: session replay with the network log, console and Redux state attached. Funnels, path analysis, surveys and the Galileo AI features were layered on from 2024 (<a href="https://blog.logrocket.com/product-management/galileo-ai-fall-24/" rel="noopener">LogRocket blog</a>). It claims 3,000+ customers (<a href="https://logrocket.com/" rel="noopener">logrocket.com</a>).</p>
+
+  <h2>1. SDK performance</h2>
+  <table>
+    <thead><tr><th></th><th>LogRocket</th><th>Amplitude (measured on this site)</th></tr></thead>
+    <tbody>
+      <tr><td>Install</td><td>npm <span class="mono">logrocket</span> or a CDN <span class="mono">&lt;script&gt;</span> with no <span class="mono">async</span>/<span class="mono">defer</span>; docs say <span class="mono">init()</span> "must run before other application code is loaded" (<a href="https://docs.logrocket.com/docs/quickstart" rel="noopener">quickstart</a>, <a href="https://docs.logrocket.com/docs/troubleshooting-sessions" rel="noopener">troubleshooting</a>).</td><td>npm <span class="mono">@amplitude/unified</span> or CDN scripts; Session Replay can be deferred to <span class="mono">load</span> or idle with a documented pattern.</td></tr>
+      <tr><td>Advertised size</td><td>"a compressed, 8 KB script" loaded synchronously (<a href="https://docs.logrocket.com/docs/performance" rel="noopener">performance docs</a>); bundlephobia lists 16.5 kB gzipped for the npm package (<a href="https://bundlephobia.com/package/logrocket" rel="noopener">bundlephobia</a>).</td><td>Analytics 67 kB; Session Replay plugin 142 kB; both documented as separate files.</td></tr>
+      <tr><td>What actually loads</td><td>The shim (<span class="mono">LogRocket.min.js</span>, 14.6 kB gzipped as measured) injects a second script, <span class="mono">logger-1.min.js</span>, <strong>171 kB gzipped / 766 kB raw</strong> as measured on 2026-10-20. Neither the docs nor bundlephobia mention the second file.</td><td>Analytics + Session Replay: 209 kB gzipped total, 726 kB raw. Comparable weight once the second stage is counted; Amplitude's is visible in the docs and in the page's <span class="mono">&lt;head&gt;</span>.</td></tr>
+      <tr><td>Runtime claims</td><td>Most processing on a worker thread, main thread "never blocked for more than 5 milliseconds", protobuf encoding, circuit breakers that pause Redux or console capture when expensive, "1-10kb of additional data per minute" (<a href="https://docs.logrocket.com/docs/performance" rel="noopener">docs</a>, <a href="https://docs.logrocket.com/docs/q-a" rel="noopener">FAQ</a>).</td><td>Snapshot 10–50 ms, under 5 ms per interaction, under 2% CPU, compression deferred to idle, optional web worker; published Lighthouse comparison (<a href="https://amplitude.com/docs/sdks/session-replay/session-replay-plugin" rel="noopener">docs</a>).</td></tr>
+      <tr><td>Measurement guidance</td><td>None published beyond console notices when circuit breakers trip.</td><td>Deferral pattern and performance options documented; this site's <a href="../performance/">method</a> works for either vendor.</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Test idea for MVSI: run the same KYB form through WebPageTest with each vendor's documented snippet and compare total bytes and Total Blocking Time. The site's performance pages are set up for the Amplitude half.</p>
+
+  <h2>2. Data collection and masking</h2>
+  <table>
+    <thead><tr><th></th><th>LogRocket</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      <tr><td>Default capture</td><td>All DOM except <span class="mono">type="password"</span>: "all other elements are captured by default" (<a href="https://docs.logrocket.com/reference/dom" rel="noopener">DOM reference</a>). Plus XHR/fetch requests including bodies, five console methods, uncaught exceptions, and IP (<span class="mono">shouldCaptureIP</span> defaults to true) (<a href="https://docs.logrocket.com/reference/network" rel="noopener">network</a>, <a href="https://docs.logrocket.com/reference/shouldcaptureip" rel="noopener">IP</a>).</td><td>Session Replay default level Medium masks every input, select and textarea. Analytics Autocapture never collects input values. Network request bodies are not captured unless a capture rule is configured; console capture is a project setting, off unless enabled.</td></tr>
+      <tr><td>Masking model</td><td>Opt-in flags in code: <span class="mono">dom.inputSanitizer</span> and <span class="mono">dom.textSanitizer</span> default to <span class="mono">false</span>; <span class="mono">data-private</span> / <span class="mono">data-public</span> attributes; <span class="mono">redactSelectors</span>, <span class="mono">hideSelectors</span>; separate <span class="mono">requestSanitizer</span> / <span class="mono">responseSanitizer</span> functions for network bodies (<a href="https://docs.logrocket.com/reference/dom" rel="noopener">DOM</a>, <a href="https://docs.logrocket.com/reference/network" rel="noopener">network</a>).</td><td>Three preset levels plus mask, unmask and block selectors, settable in code or centrally in the project.</td></tr>
+      <tr><td>Where masking runs</td><td>Client-side: "None of that data will be recorded or sent to LogRocket" (<a href="https://docs.logrocket.com/reference/dom" rel="noopener">docs</a>).</td><td>Client-side, before transmission. Same model; see the <a href="../masking/">masking page</a>.</td></tr>
+      <tr><td>Network bodies</td><td>Captured; docs recommend sanitizers "to remove all headers and bodies" rather than disabling network capture. For a KYB form, the submit request body contains every field value unless a tenant writes a sanitizer.</td><td>Not captured by default. If network tracking is enabled it records URL, method, status and sizes; bodies only with an explicit rule.</td></tr>
+    </tbody>
+  </table>
+  <div class="note warn">The practical difference for MVSI: LogRocket's defaults are built for debugging and capture broadly, with privacy as per-option opt-in in each tenant's code. For a form with hundreds of sensitive fields, every tenant's developers must get the sanitizers right, including for network bodies, which replay masking does not cover.</div>
+
+  <h2>3. Control across tenants</h2>
+  <table>
+    <thead><tr><th></th><th>LogRocket</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      <tr><td>Central masking policy</td><td>Not found. The Admin-only Recording Settings page offers pause recording, session limits, geographic, IP, app-version and user-agent blocking (<a href="https://docs.logrocket.com/docs/recording-settings" rel="noopener">docs</a>). No documented dashboard-side DOM or network masking, and no mechanism by which the dashboard overrides what page code sends.</td><td>Project-level masking level and selector overrides that take precedence over SDK code; Autocapture scope settable remotely. Demonstrated live on the <a href="../tenant-control/">tenant-control page</a>.</td></tr>
+      <tr><td>Fail-closed</td><td>Not documented.</td><td>If remote config cannot load, Session Replay records nothing.</td></tr>
+      <tr><td>Org → project controls</td><td>Org settings documented are name, slug and access requests (<a href="https://docs.logrocket.com/docs/organization-settings" rel="noopener">docs</a>). Session quota is pooled across projects; per-project caps are Pro/Enterprise (<a href="https://docs.logrocket.com/docs/impose-session-limit" rel="noopener">docs</a>).</td><td>Replay quota is org-level with per-project sample rates and dynamic sampling.</td></tr>
+      <tr><td>Roles</td><td>Admin, Developer, Guest; custom roles can limit projects but a user "cannot be a Guest on one project and a Developer on another" (<a href="https://docs.logrocket.com/docs/role-based-access" rel="noopener">docs</a>). Custom roles and audit logging are tier-gated.</td><td>Per-project roles; Enterprise RBAC can restrict Data settings to admins.</td></tr>
+      <tr><td>SSO</td><td>Google SSO self-serve; SAML/Okta/Azure AD via support ticket (<a href="https://docs.logrocket.com/docs/single-sign-on" rel="noopener">docs</a>).</td><td>SAML SSO on Enterprise plans.</td></tr>
+      <tr><td>CSP footprint</td><td>13 wildcard ingest domain families to allow-list (<a href="https://docs.logrocket.com/docs/troubleshooting-sessions" rel="noopener">docs</a>); a newly added domain broke at least one customer's CSP (<a href="https://github.com/PrefectHQ/prefect/issues/9436" rel="noopener">GitHub issue</a>).</td><td>Two to four <span class="mono">*.amplitude.com</span> hosts; documented per product.</td></tr>
+    </tbody>
+  </table>
+  <p class="small muted">Probe question for the session: "If your compliance team changes a masking rule tomorrow, how does it reach every tenant without a code deploy?"</p>
+
+  <h2>4. Recording-time privacy</h2>
+  <table>
+    <thead><tr><th></th><th>LogRocket</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      <tr><td>Retroactive rule changes</td><td>Not documented. Redaction runs in the browser, so sessions recorded before a rule change already hold the unredacted DOM; the documented remedy is deletion (<a href="https://docs.logrocket.com/docs/gdpr" rel="noopener">GDPR docs</a>).</td><td>Same physics: no retroactive change in either direction. Remedy is deletion through the User Privacy API. See <a href="../recording-privacy/">recording-time privacy</a>.</td></tr>
+      <tr><td>Retention</td><td>Day counts are not in the docs; third parties report 30 days standard with paid extensions (<a href="https://rumcost.com/logrocket-pricing" rel="noopener">RUMCost</a>). Watched sessions can be kept 12 months, capped at 5% of quota, Pro and Enterprise (<a href="https://docs.logrocket.com/docs/extended-session-retention" rel="noopener">docs</a>).</td><td>30 days from ingestion by default, extended up to 12 months as an option (<a href="https://amplitude.com/docs/session-replay/replay-data-lifecycle" rel="noopener">docs</a>).</td></tr>
+      <tr><td>Deletion</td><td>GDPR API by email or user ID adds a do-not-record flag; bulk delete up to 100,000 sessions per request, Admin only, "cannot be undone"; "Deleted sessions still count toward session usage" (<a href="https://docs.logrocket.com/docs/deleting-sessions" rel="noopener">docs</a>). No point-in-time backups (<a href="https://docs.logrocket.com/docs/security" rel="noopener">security</a>).</td><td>User Privacy API removes all replays for a user; project deletion removes the project's replays.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Form instrumentation</h2>
+  <table>
+    <thead><tr><th></th><th>LogRocket</th><th>Amplitude</th></tr></thead>
+    <tbody>
+      <tr><td>Autocapture</td><td>Clicks, text input (as a searchable "Text Input" filter on <em>values</em> typed), URLs, navigation, rage and dead clicks, element visibility, network requests, logs (<a href="https://docs.logrocket.com/docs/logrocket-filters" rel="noopener">filters</a>). Several filters are non-retroactive and "must be saved before sessions will meet the search criteria" (<a href="https://docs.logrocket.com/docs/signals" rel="noopener">signals</a>).</td><td>Page views, sessions, form started/submitted, element clicked/changed (never values), file downloads, Web Vitals, frustration interactions; all retroactively queryable as events.</td></tr>
+      <tr><td>Form analytics</td><td>No field-level drop-off, time-in-field or abandonment reporting found in docs or product pages. Closest primitives are the Text Input filter and funnels on clicks, URLs or custom events (<a href="https://docs.logrocket.com/docs/funnels-1" rel="noopener">funnels</a>).</td><td>Funnels, segmentation and retention on any event and property; the <a href="../instrumentation/">proposal</a> uses one Field Validation Failed event grouped by <span class="mono">field_id</span>.</td></tr>
+      <tr><td>Custom events</td><td><span class="mono">LogRocket.track(name, props)</span>: scalars and arrays, "A maximum of 2000 properties may be uploaded per session" (<a href="https://docs.logrocket.com/reference/track" rel="noopener">docs</a>). <span class="mono">identify()</span> traits are filterable but not range-queryable, up to 10 calls per page (<a href="https://docs.logrocket.com/reference/identify" rel="noopener">docs</a>).</td><td>Events with typed properties, group analytics for tenants, tracking plan with schema enforcement.</td></tr>
+      <tr><td>Analysis depth</td><td>Timeseries, tables, funnels, path analysis, heatmaps; funnel group-by is a short fixed list and "cannot be used with" period comparison (<a href="https://docs.logrocket.com/docs/funnels-1" rel="noopener">docs</a>).</td><td>Full product analytics: funnels, retention, journeys, cohorts, experiments, warehouse export.</td></tr>
+      <tr><td>AI</td><td>Galileo: session highlights (up to 10 sessions per user), funnel insights, issue digests, Cursor agent dispatch; Pro and above (<a href="https://docs.logrocket.com/docs/galileo" rel="noopener">docs</a>).</td><td>Session Replay Agent and AI features on the analytics side; not the subject of this review.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Pricing shape</h2>
+  <p>LogRocket's public page lists Core, Pro and Enterprise tiers, "Starting at $176/ month" on an annual plan for 25,000 sessions, metered on sessions pooled across projects, with final price depending on "seats, retention length, and add-ons". Conditional recording (rule-based sampling) is a separate add-on at about $860/month billed annually. Issues such as rage and dead clicks are paid-plan only. Retention length is a priced variable rather than a published number (<a href="https://logrocket.com/pricing" rel="noopener">pricing page</a>, <a href="https://docs.logrocket.com/docs/conditional-recording" rel="noopener">conditional recording</a>). Third-party contract data suggests 100K+ session deals land in the $3,000 to $8,000 per month range (<a href="https://www.vendr.com/marketplace/logrocket" rel="noopener">Vendr</a>).</p>
+
+  <h2>Where LogRocket is stronger</h2>
+  <p>Fairness matters in a public comparison. LogRocket's replay viewer attaches the network log, console and application state to the recording, which is better for reproducing a bug than Amplitude's replay viewer. Its conditional recording buffers up to 10 MB of activity before a trigger fires, so the recording includes what led up to the condition. If MVSI's primary need were engineering bug reproduction rather than onboarding analytics and tenant-wide privacy control, those are real advantages.</p>
+
+  <h2>Twelve points to raise</h2>
+  <ol>
+    <li>Real page weight: the 8 kB shim loads a 171 kB gzipped second stage. Compare like for like.</li>
+    <li>The documented snippet is synchronous and must run before application code.</li>
+    <li>Default capture is broad and masking is opt-in per option, including for network bodies.</li>
+    <li>No dashboard-enforced masking policy; every redaction control lives in tenant code or HTML attributes.</li>
+    <li>No retroactive redaction; deleted sessions still count against quota.</li>
+    <li>Settings are per project with a pooled quota and no org-level config push.</li>
+    <li>Roles cannot vary per project for one user; custom roles and audit logs are tier-gated.</li>
+    <li>SAML SSO needs a support ticket.</li>
+    <li>Thirteen ingest domain families to allow-list in each tenant's CSP.</li>
+    <li>No field-level form analytics documented; several session filters are non-retroactive.</li>
+    <li>Analytics ceilings: 2,000 properties per session, no range queries on traits, limited funnel group-by.</li>
+    <li>Rule-based sampling is a paid add-on.</li>
+  </ol>
+</main>
+<script src="../assets/nav.js"></script>
+</body>
+</html>

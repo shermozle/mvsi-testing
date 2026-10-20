@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3 · Control across tenants · MVSI technical review</title>
+<link rel="stylesheet" href="../assets/site.css">
+<script src="../assets/config.js"></script>
+<script src="../assets/wire-inspector.js?v=3"></script>
+<script src="https://cdn.amplitude.com/libs/analytics-browser-2.48.0-min.js.gz"></script>
+<script src="https://cdn.amplitude.com/libs/plugin-session-replay-browser-1.36.3-min.js.gz"></script>
+<script>
+(function () {
+  // Pretend to be a careless tenant developer: ask for the weakest masking and
+  // explicitly UNMASK the sensitive fields. Then watch the project's central
+  // settings win. Remote config is left at its default (on, live endpoint).
+  var params = new URLSearchParams(location.search);
+  var level = params.get("level") || "light";
+  if (["light", "medium", "conservative"].indexOf(level) < 0) level = "light";
+  window.MASK_LEVEL = level;
+  amplitude.add(window.sessionReplay.plugin({
+    sampleRate: 1,
+    flushIntervalConfig: { minIntervalMs: 1000, maxIntervalMs: 3000 },   // demo-only, faster uploads
+    eagerFullSnapshotSend: true,
+    performanceConfig: { enabled: true, timeout: 1000 },   // documented: cap how long deferred compression waits for an idle period
+    debugMode: params.get("debug") === "1",   // ?debug=1 makes the plugin ignore window focus (documented for local testing)
+    logLevel: params.get("debug") === "1" ? 4 : 2,
+    privacyConfig: {
+      defaultMaskLevel: level,
+      unmaskSelector: ["[data-sensitive]"]     // the mistake: a tenant unmasking its sensitive fields
+    }
+  }));
+  amplitude.init(window.MVSI_CONFIG.apiKey, {
+    logLevel: params.get("debug") === "1" ? 4 : 2,
+    fetchRemoteConfig: true,
+    autocapture: true,
+    flushIntervalMillis: 2000
+  });
+})();
+</script>
+</head>
+<body data-variant="tenant-control">
+<main class="wrap">
+  <h1>3. Control across tenants</h1>
+  <p class="lede">Can MVSI centrally enforce masking so a client's developers cannot accidentally expose a sensitive field? Yes, for Session Replay masking and for Autocapture scope. This page is deliberately misconfigured to show it.</p>
+
+  <div class="note warn"><strong>What this page's code asks for:</strong> <span class="mono">defaultMaskLevel: "<span id="level-label"></span>"</span> and <span class="mono">unmaskSelector: ["[data-sensitive]"]</span>, which would send the TFN, licence and card fields in clear. <strong>What the project enforces:</strong> shown live on the right, fetched from <span class="mono">sr-client-cfg.amplitude.com</span>. When they conflict, the project wins (<a href="https://amplitude.com/docs/session-replay/manage-privacy-settings-for-session-replay#how-session-replay-resolves-conflicts-between-the-sdk-and-the-ui" rel="noopener">docs</a>).</div>
+
+  <p>
+    <span class="toggle-group" id="level-toggle">
+      <a href="?level=light" data-level="light">Light</a><a href="?level=medium" data-level="medium">Medium</a><a href="?level=conservative" data-level="conservative">Conservative</a>
+    </span>
+    <span class="small muted" style="margin-left:10px">Local level requested by this page's code. Compare with the <a href="../masking/?level=light">masking page</a>, where remote config is pinned and the local level is honoured.</span>
+  </p>
+
+  <div class="two-col">
+    <div>
+      <div class="kyb">
+        <form id="kyb-tenant" name="kyb-tenant" action="/kyb/tenant" method="post" novalidate>
+          <legend style="font-size:1.15rem;font-weight:600">Tenant form with a mistake in it</legend>
+          <p class="step-help">Type into the sensitive fields, then search the payloads for what you typed.</p>
+          <div class="fields">
+            <div class="field"><label for="t_name">Director full name</label><input id="t_name" name="name" type="text" autocomplete="name"></div>
+            <div class="field"><label for="t_company">Company</label><input id="t_company" name="company" type="text" autocomplete="organization"></div>
+            <div class="field"><label for="t_tfn">Tax file number <span class="badge bad">data-sensitive</span></label><input id="t_tfn" name="tfn" type="text" inputmode="numeric" data-sensitive="true"></div>
+            <div class="field"><label for="t_licence">Driver licence <span class="badge bad">data-sensitive</span></label><input id="t_licence" name="licence" type="text" data-sensitive="true"></div>
+            <div class="field"><label for="t_card">Card number <span class="badge bad">data-sensitive</span></label><input id="t_card" name="card" type="text" inputmode="numeric" data-sensitive="true"></div>
+            <div class="field"><label for="t_notes">Notes</label><textarea id="t_notes" name="notes"></textarea></div>
+          </div>
+          <div class="pii-block" style="margin-top:12px">Review summary rendered as text: Director <span class="applicant-data">Jane Citizen</span>, TFN <span class="applicant-data">123 456 782</span>. <span class="muted">A central <code>maskSelector</code> on <code>.applicant-data</code> covers this; the page code does nothing about it.</span></div>
+          <div class="actions"><span></span><button type="submit">Submit</button></div>
+        </form>
+      </div>
+
+      <h2>What MVSI can enforce centrally, and what stays with each tenant's build</h2>
+      <table>
+        <thead><tr><th>Concern</th><th>Supported central control (Amplitude settings, no tenant code change)</th><th>Implementation responsibility (MVSI or tenant code)</th></tr></thead>
+        <tbody>
+          <tr><td><strong>Replay masking level</strong></td><td>Project-level Light / Medium / Conservative in <em>Settings → Organizational Settings → Session Replay Settings</em>. Overrides the SDK's <span class="mono">defaultMaskLevel</span> when remote config is on. Changes take effect on the next page load; no deploy.</td><td>Keep remote config enabled (it is the default). Do not set <span class="mono">configServerUrl</span> to anything but Amplitude or MVSI's own proxy.</td></tr>
+          <tr><td><strong>Per-element mask / unmask / exclude</strong></td><td>CSS-selector overrides in the same settings page. A UI "mask" beats an SDK "unmask" for the same element.</td><td>Give sensitive fields a stable hook the selectors can target, for example <span class="mono">data-sensitive</span> or a class set by MVSI's form renderer, so one central rule covers every tenant form.</td></tr>
+          <tr><td><strong>Fail-closed behaviour</strong></td><td>If remote config cannot be fetched, Session Replay records nothing. Built in.</td><td>Allow <span class="mono">sr-client-cfg.amplitude.com</span> in tenant CSPs, or proxy it. A blocked config call means no replays, not unmasked replays.</td></tr>
+          <tr><td><strong>Sample rate and quota</strong></td><td>Project-level sample rate, dynamic sampling, targeted capture; organisation-wide quota.</td><td>Nothing, unless a tenant wants a lower rate than the project's.</td></tr>
+          <tr><td><strong>Which pages record</strong></td><td>Targeted Replay Capture by URL, event or property. URL-pattern mask levels (<span class="mono">urlMaskLevels</span>) are an SDK option today.</td><td>Call <span class="mono">amplitude.remove("sessionReplayTracking")</span> before restricted areas if a tenant needs a hard stop in code.</td></tr>
+          <tr><td><strong>Autocapture scope</strong></td><td><em>Data → Settings → Autocapture</em>: turn categories on or off remotely, element allow-lists, page URL exclude and allow lists, regex masking patterns. "On" and "Off" override local SDK config; "Default" leaves it alone. Takes effect within about 10 minutes.</td><td>Keep <span class="mono">fetchRemoteConfig</span> on (default since 2.16.1). Autocapture never collects input values regardless of settings; this governs element text and which pages are tracked.</td></tr>
+          <tr><td><strong>Attribute values in replays</strong></td><td>None. Masking covers text and inputs, not <span class="mono">value</span>, <span class="mono">placeholder</span>, <span class="mono">title</span>, <span class="mono">alt</span>, <span class="mono">aria-label</span> or <span class="mono">data-*</span> attributes.</td><td>MVSI's renderer must not put applicant data into attributes. Use <span class="mono">blockSelector</span> or <span class="mono">.amp-block</span> for widgets that do.</td></tr>
+          <tr><td><strong>URLs containing identifiers</strong></td><td>None today in the UI.</td><td><span class="mono">ugcFilterRules</span> in SDK config to rewrite, for example, <span class="mono">/applications/12345</span> to <span class="mono">/applications/*</span>.</td></tr>
+          <tr><td><strong>Custom event properties</strong></td><td>Amplitude Data schema: block or drop unplanned properties on ingest, require tracking-plan review before changes to main.</td><td>Never put a field value in an event property. The <a href="../instrumentation/">instrumentation proposal</a> is built around that rule.</td></tr>
+          <tr><td><strong>Who can change the rules</strong></td><td>Admins and managers on the project. Enterprise RBAC can restrict Data settings to admins; each tenant can be its own project with its own settings if isolation is needed.</td><td>Decide the project topology: one project per tenant (settings and data isolated, each tenant's rules set by MVSI) or one shared project with <span class="mono">tenant_id</span> as a property.</td></tr>
+        </tbody>
+      </table>
+      <div class="note">The honest limit: central settings control what the Amplitude SDK does, assuming the tenant actually loads Amplitude's SDK with remote config reachable. A tenant that strips the SDK, blocks the config endpoint or renders PII into HTML attributes is outside what any vendor setting can fix. Those belong in MVSI's platform contract with its clients, and in MVSI's shared form renderer rather than in each tenant's codebase.</div>
+    </div>
+
+    <aside class="sticky">
+      <div class="panel amp-block" id="remote-panel"><h3>Project-level settings <small>live</small></h3><p class="muted small">Fetching…</p></div>
+      <div class="panel amp-block" id="wire-panel" style="margin-top:12px"><h3>What left the browser</h3><p class="muted small">Waiting for the first request…</p></div>
+    </aside>
+  </div>
+</main>
+<script src="../assets/nav.js"></script>
+<script>
+(function () {
+  var level = window.MASK_LEVEL;
+  document.getElementById("level-label").textContent = level;
+  document.querySelectorAll("#level-toggle a").forEach(function (a) { a.classList.toggle("on", a.getAttribute("data-level") === level); });
+  document.getElementById("kyb-tenant").addEventListener("submit", function (e) { e.preventDefault(); this.querySelector("button").textContent = "Submitted (intercepted in page)"; });
+  WireInspector.mount(document.getElementById("wire-panel"));
+
+  // Show the exact remote config this project serves right now, side by side with what the page asked for.
+  var url = "https://sr-client-cfg.amplitude.com/config/" + window.MVSI_CONFIG.apiKey + "?config_group=browser";
+  var panel = document.getElementById("remote-panel");
+  fetch(url).then(function (r) { return r.json(); }).then(function (cfg) {
+    var sr = (cfg.configs && cfg.configs.sessionReplay) || {};
+    var pc = sr.sr_privacy_config || sr.privacyConfig || {};
+    var hasRules = Object.keys(sr).length > 0;
+    panel.innerHTML = '<h3>Project-level settings <small>live from sr-client-cfg</small></h3>' +
+      '<table><thead><tr><th></th><th>This page asked for</th><th>Project enforces</th></tr></thead><tbody>' +
+      "<tr><td>Mask level</td><td class=\"mono\">" + level + "</td><td class=\"mono\">" + (pc.defaultMaskLevel || sr.defaultMaskLevel || '<span class="muted">not set</span>') + "</td></tr>" +
+      "<tr><td>Mask selectors</td><td class=\"mono\">–</td><td class=\"mono\">" + ((pc.maskSelector || []).join(", ") || '<span class="muted">none</span>') + "</td></tr>" +
+      "<tr><td>Unmask selectors</td><td class=\"mono\">[data-sensitive]</td><td class=\"mono\">" + ((pc.unmaskSelector || []).join(", ") || '<span class="muted">none</span>') + "</td></tr>" +
+      "<tr><td>Block selectors</td><td class=\"mono\">–</td><td class=\"mono\">" + ((pc.blockSelector || []).join(", ") || '<span class="muted">none</span>') + "</td></tr>" +
+      "<tr><td>Sample rate</td><td class=\"mono\">1</td><td class=\"mono\">" + (sr.sr_sampling_config && sr.sr_sampling_config.sample_rate != null ? sr.sr_sampling_config.sample_rate : (sr.sampleRate != null ? sr.sampleRate : '<span class="muted">not set</span>')) + "</td></tr>" +
+      "</tbody></table>" +
+      (hasRules ? '<p class="small"><span class="badge ok">central rules active</span> Type into a <code>data-sensitive</code> field and search the payload: the value is masked even though this page unmasked it.</p>'
+                : '<p class="small"><span class="badge warn">no central rules yet</span> The project has no privacy settings, so the page\'s request is honoured. Set a level and overrides in Session Replay Settings and reload.</p>') +
+      '<details><summary class="small">Raw response</summary><pre style="font-size:0.72rem">' + JSON.stringify(cfg, null, 1).replace(/</g, "&lt;") + "</pre></details>";
+  }).catch(function (e) {
+    panel.innerHTML = '<h3>Project-level settings</h3><p class="small">Could not fetch remote config: ' + String(e).replace(/</g, "&lt;") + "</p>";
+  });
+})();
+</script>
+</body>
+</html>

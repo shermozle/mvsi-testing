@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MVSI × Amplitude technical review</title>
+<link rel="stylesheet" href="assets/site.css">
+</head>
+<body>
+<main class="wrap">
+  <h1>MVSI technical review: test site</h1>
+  <p class="lede">A working answer to each of the five technical questions MVSI raised about Amplitude for KYB onboarding forms, plus a comparison with LogRocket. Every page is static, the source is public, and every Amplitude request the pages make is visible in your browser's network tab or in the in-page inspector.</p>
+
+  <div class="note">Context: MVSI runs know-your-business onboarding journeys for many client tenants, with forms containing hundreds of fields. The questions below came from their CTO's team. Work through them in order; each page ends with a link to the next.</div>
+
+  <h2>The sequence</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>1. SDK performance</h3>
+      <p>What loads in the browser, what it weighs, and how to measure the impact on a complex multi-step form. Eight variants of the same 70-field form with different components enabled.</p>
+      <a class="button" href="performance/">Open</a>
+    </div>
+    <div class="card">
+      <h3>2. Data collection and masking</h3>
+      <p>What leaves the browser and how masking is applied before transmission. A form with every field type, a Light / Medium / Conservative switch, and a decoded view of each payload.</p>
+      <a class="button" href="masking/">Open</a>
+    </div>
+    <div class="card">
+      <h3>3. Control across tenants</h3>
+      <p>Whether MVSI can centrally enforce masking so a client cannot accidentally expose a field. Live demonstration of project-level settings overriding page code, and a table of who is responsible for what.</p>
+      <a class="button" href="tenant-control/">Open</a>
+    </div>
+    <div class="card">
+      <h3>4. Recording-time privacy</h3>
+      <p>Masking behaviour and its limits, and what happens when rules change after a replay already exists.</p>
+      <a class="button" href="recording-privacy/">Open</a>
+    </div>
+    <div class="card">
+      <h3>5. Form instrumentation</h3>
+      <p>A manageable event model for hundreds of fields across many interlocking forms: what Autocapture gives for free, what to add in MVSI's form engine, and how to measure friction without ever collecting a value.</p>
+      <a class="button" href="instrumentation/">Open</a>
+    </div>
+    <div class="card">
+      <h3>LogRocket comparison</h3>
+      <p>Desk research on LogRocket's SDK, masking model, tenant controls and form analytics, with sources, as comparison points for the discussion.</p>
+      <a class="button secondary" href="logrocket/">Open</a>
+    </div>
+  </div>
+
+  <h2>How this site is built</h2>
+  <ul>
+    <li>Plain HTML, CSS and JavaScript with no build step, hosted on GitHub Pages. Source: <a href="https://github.com/shermozle/mvsi-testing" rel="noopener">shermozle/mvsi-testing</a>.</li>
+    <li>SDKs load from Amplitude's CDN exactly as a customer would deploy them, so WebPageTest sees a realistic waterfall.</li>
+    <li>Data goes to one dedicated Amplitude demo project. The API key is in <span class="mono">assets/config.js</span>; browser API keys are public by design.</li>
+    <li>The form is fictional. Please don't type real identity or bank details into it, even though masking would catch most of them.</li>
+  </ul>
+</main>
+<script src="assets/nav.js"></script>
+</body>
+</html>
